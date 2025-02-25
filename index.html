@@ -1,7 +1,10 @@
 <div style="display: flex;">
     <div id="sidebar" style="width: 200px; height: 810px; background: #e0e0e0; padding: 10px; font-family: Arial, sans-serif;">
-        <div id="turn-info" style="margin-bottom: 10px;"></div>
-        <button id="done-button" style="display: none; width: 100%; padding: 5px;">Done</button>
+        <div id="pattern-list">
+            <button id="glider-btn" style="width: 100%; margin-bottom: 5px;">Glider</button>
+            <button id="block-btn" style="width: 100%; margin-bottom: 5px;">Block</button>
+        </div>
+        <div id="turn-info" style="margin-top: 10px;"></div>
     </div>
     <div>
         <div id="status-bar" style="width: 800px; height: 30px; background: #f0f0f0; text-align: center; line-height: 30px; font-family: Arial, sans-serif;">
@@ -23,7 +26,7 @@ const GameOfLife = (function () {
     const GENERATION_LENGTH = 50;
     const GENERATIONS_BETWEEN_TURNS = 50;
     const BASE_BUFFER = 30;
-    const MAX_PICKS = 5;
+    const MAX_PICKS = 1; // One pattern per turn
     // not technically number of statics, but close enough
     const NUM_STATICS_AT_START = 30;
 
@@ -34,8 +37,12 @@ const GameOfLife = (function () {
     let intervalId = null;
     let generation = 0;
     let turnPhase = "team2"; // Start with Blue's turn
-    let team2Picks = new Set();
-    let team1Picks = new Set();
+    let selectedPattern = null;
+    let previewCells = new Set(); // Temp cells for rotation preview
+    let previewBaseX = 0;
+    let previewBaseY = 0;
+    let rotation = 0; // 0, 1, 2, 3 (0°, 90°, 180°, 270°)
+    let flipped = false; // Horizontal flip toggle
 
     // DOM setup (private)
     const canv = document.getElementById("gc");
@@ -51,7 +58,8 @@ const GameOfLife = (function () {
     const team1Span = document.getElementById("team1");
     const team2Span = document.getElementById("team2");
     const turnInfo = document.getElementById("turn-info");
-    const doneButton = document.getElementById("done-button");
+    const gliderBtn = document.getElementById("glider-btn");
+    const blockBtn = document.getElementById("block-btn");
 
     // UI constants
     const CELL_COLOR_0 = "Black";
@@ -67,53 +75,77 @@ const GameOfLife = (function () {
         [0, 2, 0], [1, 2, 1], [1, 2, 2], [0, 2, 3],
         [0, 3, 0], [0, 3, 1], [0, 3, 2], [0, 3, 3]
     ];
+    const glider = [
+        [0, 0, 0], [1, 0, 1], [0, 0, 2],
+        [0, 1, 0], [0, 1, 1], [1, 1, 2],
+        [1, 2, 0], [1, 2, 1], [1, 2, 2]
+    ];
+
     // Initialize the game
     function init() {
         document.addEventListener("click", handleClick);
         document.addEventListener("keydown", handleKeyPress);
-        doneButton.addEventListener("click", handleDoneClick);
+        gliderBtn.addEventListener("click", (e) => selectPattern(e, glider));
+        blockBtn.addEventListener("click", (e) => selectPattern(e, block));
         initialState();
     }
 
     // Event handlers
     function handleClick(event) {
-        if (running || turnPhase === "running") return;
+        if (running || turnPhase === "running" || event.target !== canv) return;
         const rect = canv.getBoundingClientRect();
         const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
         const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
         const team = turnPhase === "team2" ? 2 : 1;
-        const cellKey = `${team},${x},${y}`;
-        const picks = turnPhase === "team2" ? team2Picks : team1Picks;
 
-        if (picks.has(cellKey)) {
-            // Undo misclick
-            picks.delete(cellKey);
-            liveCells.delete(cellKey);
-        } else if (picks.size < MAX_PICKS) {
-            // Add new pick
-            picks.add(cellKey);
-            liveCells.add(cellKey);
+        if (selectedPattern && previewCells.size === 0) {
+            // First click: place preview
+            previewBaseX = x;
+            previewBaseY = y;
+            placePatternPreview(team, x, y, selectedPattern, rotation, flipped);
+            updateTurnUI();
+            drawGrid();
+        } else if (previewCells.size > 0) {
+            // Subsequent click: rotate
+            rotation = (rotation + 1) % 4;
+            clearPreview();
+            placePatternPreview(team, previewBaseX, previewBaseY, selectedPattern, rotation, flipped);
+            updateTurnUI();
+            drawGrid();
         }
-        updateTurnUI();
-        drawGrid();
     }
 
     function handleKeyPress(event) {
-        if (event.code === "Space" && turnPhase === "running") {
-            running ? pausePending = true : startGame();
+        if (event.code === "Space") {
+            if (turnPhase === "running") {
+                running ? pausePending = true : startGame();
+            } else if (previewCells.size > 0) {
+                // Confirm placement
+                previewCells.forEach(cell => liveCells.add(cell));
+                clearPreview();
+                turnPhase = turnPhase === "team2" ? "team1" : "running";
+                if (turnPhase === "running") {
+                    startGame();
+            }
+            updateTurnUI();
+            drawGrid();
+        }
+        } else if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+            if (previewCells.size > 0) {
+                // Toggle flip
+                flipped = !flipped;
+                clearPreview();
+                placePatternPreview(turnPhase === "team2" ? 2 : 1, previewBaseX, previewBaseY, selectedPattern, rotation, flipped);
+                updateTurnUI();
+                drawGrid();
+            }
         }
     }
 
-    function handleDoneClick(event) {
-        event.stopPropagation(); // Stop click bubbling to handleClick
-        if (turnPhase === "team2") {
-            turnPhase = "team1";
-            updateTurnUI();
-        } else if (turnPhase === "team1") {
-            turnPhase = "running";
-            team2Picks.clear();
-            team1Picks.clear();
-            startGame();
+    function selectPattern(event, pattern) {
+        event.stopPropagation(); // Stop bubbling to handleClick
+        if (turnPhase !== "running" && previewCells.size === 0) {
+            selectedPattern = pattern;
         }
     }
 
@@ -131,16 +163,14 @@ const GameOfLife = (function () {
         setTimeout(() => {
             randomSeed();
             createHomeBases();
-            updateTurnUI(); // Show Blue's turn
+            updateTurnUI();
             drawGrid();
         }, 0);
     }
 
     function randomSeed() {
         // Seed with random static patterns (Team 0)
-        const patterns = [
-            block,
-        ];
+        const patterns = [block];
         const numPatterns = Math.floor(Math.random() * NUM_STATICS_AT_START) + 5; 
         for (let i = 0; i < numPatterns; i++) {
             const pattern = patterns[Math.floor(Math.random() * patterns.length)];
@@ -175,12 +205,12 @@ const GameOfLife = (function () {
         // Update sidebar with turn info
         if (turnPhase === "running") {
             turnInfo.textContent = "";
-            doneButton.style.display = "none";
+        } else if (previewCells.size === 0) {
+            const teamName = turnPhase === "team2" ? "Blue" : "Red";
+            turnInfo.textContent = `${teamName}'s Turn: Pick a pattern`;
         } else {
             const teamName = turnPhase === "team2" ? "Blue" : "Red";
-            const picks = turnPhase === "team2" ? team2Picks : team1Picks;
-            turnInfo.textContent = `${teamName}'s Turn (${picks.size}/${MAX_PICKS} picked)`;
-            doneButton.style.display = "block";
+            turnInfo.textContent = `${teamName}'s Turn: Click to rotate, Shift to flip, Space to confirm`;
         }
     }
 
@@ -199,6 +229,36 @@ const GameOfLife = (function () {
                 liveCells.add(`${team},${x},${y}`);
             }
         }
+    }
+
+    function placePatternPreview(team, xBase, yBase, pattern, rot, flip) {
+        // Place a preview pattern with rotation and flip
+        const centerX = pattern === block ? 1.5 : 1; // Block 4x4, Glider 3x3
+        const centerY = pattern === block ? 1.5 : 1;
+        previewCells.clear();
+        for (let [isAlive, dx, dy] of pattern) {
+            if (isAlive) {
+                // Rotate around center
+                let relX = dx - centerX;
+                let relY = dy - centerY;
+                for (let i = 0; i < rot; i++) {
+                    const temp = relX;
+                    relX = relY;
+                    relY = -temp;
+                }
+                // Flip horizontally if toggled
+                if (flip) {
+                    relX = -relX;
+                }
+                const x = Math.round(xBase + relX + centerX);
+                const y = Math.round(yBase + relY + centerY);
+                previewCells.add(`${team},${x},${y}`);
+            }
+        }
+    }
+
+    function clearPreview() {
+        previewCells.clear();
     }
 
     function countNeighborsForAll() {
@@ -286,7 +346,7 @@ const GameOfLife = (function () {
             drawGrid();
             if (generation % GENERATIONS_BETWEEN_TURNS === 0) {
                 stopGame();
-                turnPhase = "team2"; // Blue goes first
+                turnPhase = "team2";
                 updateTurnUI();
             }
             updateStatusBar();
@@ -345,6 +405,11 @@ const GameOfLife = (function () {
 
         // Draw all live cells
         for (let cell of liveCells) {
+            const [t, x, y] = cell.split(",").map(Number);
+            drawCell(t, x, y);
+        }
+        // Draw preview cells
+        for (let cell of previewCells) {
             const [t, x, y] = cell.split(",").map(Number);
             drawCell(t, x, y);
         }
