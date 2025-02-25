@@ -1,5 +1,8 @@
 <div style="display: flex;">
-    <div id="sidebar" style="width: 200px; height: 830px; background: #e0e0e0;"></div>
+    <div id="sidebar" style="width: 200px; height: 810px; background: #e0e0e0; padding: 10px; font-family: Arial, sans-serif;">
+        <div id="turn-info" style="margin-bottom: 10px;"></div>
+        <button id="done-button" style="display: none; width: 100%; padding: 5px;">Done</button>
+    </div>
     <div>
         <div id="status-bar" style="width: 800px; height: 30px; background: #f0f0f0; text-align: center; line-height: 30px; font-family: Arial, sans-serif;">
             <span id="generation">Generation: 0</span> |
@@ -18,9 +21,11 @@ const GameOfLife = (function () {
     const LIVE_SURVIVE = [2, 3];
     const DEAD_REBORN = [3];
     const GENERATION_LENGTH = 50;
-    const INITIAL_GENERATIONS = 1000;
-    // number of blocks away from home bases to stay
+    const GENERATIONS_BETWEEN_TURNS = 50;
     const BASE_BUFFER = 30;
+    const MAX_PICKS = 5;
+    // not technically number of statics, but close enough
+    const NUM_STATICS_AT_START = 30;
 
     // Private state
     let liveCells = new Set();
@@ -28,6 +33,9 @@ const GameOfLife = (function () {
     let pausePending = false;
     let intervalId = null;
     let generation = 0;
+    let turnPhase = "team2"; // Start with Blue's turn
+    let team2Picks = new Set();
+    let team1Picks = new Set();
 
     // DOM setup (private)
     const canv = document.getElementById("gc");
@@ -42,7 +50,8 @@ const GameOfLife = (function () {
     const team0Span = document.getElementById("team0");
     const team1Span = document.getElementById("team1");
     const team2Span = document.getElementById("team2");
-
+    const turnInfo = document.getElementById("turn-info");
+    const doneButton = document.getElementById("done-button");
 
     // UI constants
     const CELL_COLOR_0 = "Black";
@@ -62,23 +71,49 @@ const GameOfLife = (function () {
     function init() {
         document.addEventListener("click", handleClick);
         document.addEventListener("keydown", handleKeyPress);
+        doneButton.addEventListener("click", handleDoneClick);
         initialState();
     }
 
     // Event handlers
     function handleClick(event) {
-        if (running) return;
+        if (running || turnPhase === "running") return;
         const rect = canv.getBoundingClientRect();
         const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
         const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
-        const cellKey = `0,${x},${y}`;
-        liveCells.has(cellKey) ? liveCells.delete(cellKey) : liveCells.add(cellKey);
+        const team = turnPhase === "team2" ? 2 : 1;
+        const cellKey = `${team},${x},${y}`;
+        const picks = turnPhase === "team2" ? team2Picks : team1Picks;
+
+        if (picks.has(cellKey)) {
+            // Undo misclick
+            picks.delete(cellKey);
+            liveCells.delete(cellKey);
+        } else if (picks.size < MAX_PICKS) {
+            // Add new pick
+            picks.add(cellKey);
+            liveCells.add(cellKey);
+        }
+        updateTurnUI();
         drawGrid();
     }
 
     function handleKeyPress(event) {
-        if (event.code === "Space") {
+        if (event.code === "Space" && turnPhase === "running") {
             running ? pausePending = true : startGame();
+        }
+    }
+
+    function handleDoneClick(event) {
+        event.stopPropagation(); // Stop click bubbling to handleClick
+        if (turnPhase === "team2") {
+            turnPhase = "team1";
+            updateTurnUI();
+        } else if (turnPhase === "team1") {
+            turnPhase = "running";
+            team2Picks.clear();
+            team1Picks.clear();
+            startGame();
         }
     }
 
@@ -91,9 +126,14 @@ const GameOfLife = (function () {
     }
 
     function initialState() {
+        // Draw grid, seed, bases, start with Blue's turn
         drawGrid();
-        randomSeed();
-        createHomeBases();
+        setTimeout(() => {
+            randomSeed();
+            createHomeBases();
+            updateTurnUI(); // Show Blue's turn
+            drawGrid();
+        }, 0);
     }
 
     function randomSeed() {
@@ -101,7 +141,7 @@ const GameOfLife = (function () {
         const patterns = [
             block,
         ];
-        const numPatterns = Math.floor(Math.random() * 30) + 5; 
+        const numPatterns = Math.floor(Math.random() * NUM_STATICS_AT_START) + 5; 
         for (let i = 0; i < numPatterns; i++) {
             const pattern = patterns[Math.floor(Math.random() * patterns.length)];
             const xBase = Math.floor(Math.random() * (NUM_CELLS_IN_ROW - 3));
@@ -120,7 +160,7 @@ const GameOfLife = (function () {
             const t = parseInt(cell.split(",")[0]);
             teamCounts[t]++;
         }
-        const totalLive = liveCells.size || 1; // Avoid division by 0
+        const totalLive = liveCells.size || 1; 
         const perc0 = ((teamCounts[0] / totalLive) * 100).toFixed(1);
         const perc1 = ((teamCounts[1] / totalLive) * 100).toFixed(1);
         const perc2 = ((teamCounts[2] / totalLive) * 100).toFixed(1);
@@ -129,6 +169,36 @@ const GameOfLife = (function () {
         team0Span.textContent = `Neutral: ${perc0}%`;
         team1Span.textContent = `Red: ${perc1}%`;
         team2Span.textContent = `Blue: ${perc2}%`;
+    }
+
+    function updateTurnUI() {
+        // Update sidebar with turn info
+        if (turnPhase === "running") {
+            turnInfo.textContent = "";
+            doneButton.style.display = "none";
+        } else {
+            const teamName = turnPhase === "team2" ? "Blue" : "Red";
+            const picks = turnPhase === "team2" ? team2Picks : team1Picks;
+            turnInfo.textContent = `${teamName}'s Turn (${picks.size}/${MAX_PICKS} picked)`;
+            doneButton.style.display = "block";
+        }
+    }
+
+    function placePattern(team, xBase, yBase, pattern) {
+        // Place a pattern at (xBase, yBase) - isAlive 1 = live (team), 0 = dead
+        for (let [isAlive, dx, dy] of pattern) {
+            const x = xBase + dx;
+            const y = yBase + dy;
+            if (isAlive === 0) {
+                // Dead cell: clear all teams
+                for (let t = 0; t <= 2; t++) {
+                    liveCells.delete(`${t},${x},${y}`);
+                }
+            } else {
+                // Live cell: set team
+                liveCells.add(`${team},${x},${y}`);
+            }
+        }
     }
 
     function countNeighborsForAll() {
@@ -206,39 +276,31 @@ const GameOfLife = (function () {
         }
 
         liveCells = newCells;
-    }
-
-    function placePattern(team, xBase, yBase, pattern) {
-        // Place a pattern at (xBase, yBase) - isAlive 1 = live (team), 0 = dead
-        for (let [isAlive, dx, dy] of pattern) {
-            const x = xBase + dx;
-            const y = yBase + dy;
-            if (isAlive === 0) {
-                // Dead cell: clear all teams
-                for (let t = 0; t <= 2; t++) {
-                    liveCells.delete(`${t},${x},${y}`);
-                }
-            } else {
-                // Live cell: set team
-                liveCells.add(`${team},${x},${y}`);
-            }
-        }
-    }
-
-    function gameLoop() {
-        drawGrid();
-        if (pausePending) {
-            stopGame();
-            pausePending = false;
-            return;
-        }
-        generation++;
-        updateCells();
         updateStatusBar();
     }
 
+    function gameLoop() {
+        if (turnPhase === "running") {
+            generation++;
+            updateCells();
+            drawGrid();
+            if (generation % GENERATIONS_BETWEEN_TURNS === 0) {
+                stopGame();
+                turnPhase = "team2"; // Blue goes first
+                updateTurnUI();
+            }
+            updateStatusBar();
+        } else {
+            drawGrid(); // Just draw during turns, no update
+        }
+        if (pausePending) {
+            stopGame();
+            pausePending = false;
+        }
+    }
+
     function startGame() {
-        if (!running) {
+        if (!running && turnPhase === "running") {
             intervalId = setInterval(gameLoop, GENERATION_LENGTH);
             running = true;
         }
@@ -286,9 +348,8 @@ const GameOfLife = (function () {
             const [t, x, y] = cell.split(",").map(Number);
             drawCell(t, x, y);
         }
-        updateStatusBar(); // Update UI on draw
+        updateStatusBar(); 
     }
-
 
     function getDeadNeighbors() {
         const dead = new Set();
