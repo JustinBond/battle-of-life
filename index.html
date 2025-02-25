@@ -20,7 +20,7 @@ const GameOfLife = (function () {
     const LIVE_SURVIVE = [2, 3];
     const DEAD_REBORN = [3];
     const GENERATION_LENGTH = 50;
-    const INITIAL_GENERATIONS = 0;
+    const INITIAL_GENERATIONS = 1000;
 
     // UI consants
     const liveCellColor = "Black";
@@ -41,7 +41,7 @@ const GameOfLife = (function () {
         const rect = canv.getBoundingClientRect();
         const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
         const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
-        const cellKey = `${x},${y}`;
+        const cellKey = `0,${x},${y}`;
         liveCells.has(cellKey) ? liveCells.delete(cellKey) : liveCells.add(cellKey);
         drawGrid();
     }
@@ -75,20 +75,21 @@ const GameOfLife = (function () {
         let density = Math.random();
         for (let x = 0; x < NUM_CELLS_IN_ROW; x++) {
             for (let y = 0; y < NUM_CELLS_IN_ROW; y++) {
-                if (Math.random() < density) liveCells.add(`${x},${y}`);
+                if (Math.random() < density) liveCells.add(`0,${x},${y}`);
             }
         }
     }
 
     function countNeighborsForAll() {
         // Count how many live cells neighbor each position in one pass
+        // TODO: this will need to handle different teams
         const neighborCounts = new Map(); // "x,y" -> number of live neighbors
         for (let cell of liveCells) {
-            const [x, y] = cell.split(",").map(Number);
+            const [t, x, y] = cell.split(",").map(Number);
             for (let xOffset = -1; xOffset <= 1; xOffset++) {
                 for (let yOffset = -1; yOffset <= 1; yOffset++) {
                     if (xOffset === 0 && yOffset === 0) continue;
-                    const coords = `${x + xOffset},${y + yOffset}`;
+                    const coords = `${t},${x + xOffset},${y + yOffset}`;
                     const count = (neighborCounts.get(coords) || 0) + 1;
                     neighborCounts.set(coords, count);
                 }
@@ -108,6 +109,7 @@ const GameOfLife = (function () {
         for (let cell of deadNeighbors) {
             const count = neighborCounts.get(cell) || 0;
             if (DEAD_REBORN.includes(count)) {
+                //TODO: logic to compute correct owner
                 newCells.add(cell);
             }
         }
@@ -120,18 +122,6 @@ const GameOfLife = (function () {
             }
         }
 
-        liveCells = newCells;
-    }
-
-    function updateCells2() {
-        const newCells = new Set();
-        const deadNeighbors = getDeadNeighbors();
-        for (let cell of deadNeighbors) {
-            if (DEAD_REBORN.includes(countNeighbors(cell))) newCells.add(cell);
-        }
-        for (let cell of liveCells) {
-            if (LIVE_SURVIVE.includes(countNeighbors(cell))) newCells.add(cell);
-        }
         liveCells = newCells;
     }
 
@@ -191,36 +181,25 @@ const GameOfLife = (function () {
 
         // Draw all live cells
         for (let cell of liveCells) {
-            const [x, y] = cell.split(",").map(Number);
+            const [t, x, y] = cell.split(",").map(Number);
             drawCell(x, y);
         }
     }
 
 
-    // Helpers (simplified)
-    function countNeighbors(cell) {
-        let count = 0;
-        const [x, y] = cell.split(",").map(Number);
-        for (let xo = -1; xo <= 1; xo++) {
-            for (let yo = -1; yo <= 1; yo++) {
-                if (xo === 0 && yo === 0) continue;
-                if (liveCells.has(`${x + xo},${y + yo}`)) count++;
-            }
-        }
-        return count;
-    }
-
     function getDeadNeighbors() {
         const dead = new Set();
         for (let cell of liveCells) {
-            const [x, y] = cell.split(",").map(Number);
+            const [t, x, y] = cell.split(",").map(Number);
             // neighboring cells are one to the left or right (or above or below)
             // so iterate through the potential neighbors
             for (let xOffset = -1; xOffset <= 1; xOffset++) {
                 for (let yOffset = -1; yOffset <= 1; yOffset++) {
-                    // this is not a neighbor but the main cell
+                    // this is not a neighbor, but the center cell
                     if (xOffset === 0 && yOffset === 0) continue;
-                    const neighbor = `${x + xOffset},${y + yOffset}`;
+                    // TODO: right now it only gets neighbors of the same type
+                    // - should we have three calls (teams 0, 1 and 2?), or some other data structure?
+                    const neighbor = `${t},${x + xOffset},${y + yOffset}`;
                     if (!liveCells.has(neighbor)) dead.add(neighbor);
                 }
             }
