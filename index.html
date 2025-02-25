@@ -98,8 +98,7 @@ const GameOfLife = (function () {
         for (let x = 0; x < NUM_CELLS_IN_ROW; x++) {
             for (let y = 0; y < NUM_CELLS_IN_ROW; y++) {
                 if (Math.random() < density) {
-                    const t = Math.floor(Math.random() * 3); // 0, 1, or 2
-                    liveCells.add(`${t},${x},${y}`);
+                    liveCells.add(`0,${x},${y}`);
                 }
             }
         }
