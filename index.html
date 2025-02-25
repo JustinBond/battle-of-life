@@ -1,4 +1,15 @@
-<canvas id="gc" width="800" height="800"></canvas>
+<div style="display: flex;">
+    <div id="sidebar" style="width: 200px; height: 830px; background: #e0e0e0;"></div>
+    <div>
+        <div id="status-bar" style="width: 800px; height: 30px; background: #f0f0f0; text-align: center; line-height: 30px; font-family: Arial, sans-serif;">
+            <span id="generation">Generation: 0</span> |
+            <span id="team0">Neutral: 0%</span> |
+            <span id="team1">Red: 0%</span> |
+            <span id="team2">Blue: 0%</span>
+        </div>
+        <canvas id="gc" width="800" height="800" style="display: block;"></canvas>
+    </div>
+</div>
 <script>
 // using old-school module pattern for lightweight way to handle scope problems
 const GameOfLife = (function () {
