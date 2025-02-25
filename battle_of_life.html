@@ -1,0 +1,236 @@
+<canvas id="gc" width="800" height="800"></canvas>
+<script>
+// using old-school module pattern for lightweight way to handle scope problems
+const GameOfLife = (function () {
+    // Private state
+    let liveCells = new Set();
+    let running = false;
+    let pausePending = false;
+    let intervalId = null;
+
+    // DOM setup (private)
+    const canv = document.getElementById("gc");
+    const ctx = canv.getContext("2d");
+    const CELL_SIZE = 10
+    const NUM_CELLS_IN_ROW = canv.width / CELL_SIZE;
+    const LOWER_BOUND = -50;
+    const UPPER_BOUND = NUM_CELLS_IN_ROW + (-1 * LOWER_BOUND);
+
+    // game logic constants
+    const LIVE_SURVIVE = [2, 3];
+    const DEAD_REBORN = [3];
+    const GENERATION_LENGTH = 50;
+    const INITIAL_GENERATIONS = 0;
+
+    // UI consants
+    const liveCellColor = "Black";
+    const gridLineColor = "DarkGray";
+    const backgroundColor = "Beige";
+
+
+    // Initialize the game
+    function init() {
+        document.addEventListener("click", handleClick);
+        document.addEventListener("keydown", handleKeyPress);
+        initialState();
+    }
+
+    // Event handlers
+    function handleClick(event) {
+        if (running) return;
+        const rect = canv.getBoundingClientRect();
+        const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
+        const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
+        const cellKey = `${x},${y}`;
+        liveCells.has(cellKey) ? liveCells.delete(cellKey) : liveCells.add(cellKey);
+        drawGrid();
+    }
+
+    function handleKeyPress(event) {
+        if (event.code === "Space") {
+            running ? pausePending = true : startGame();
+        }
+    }
+
+    function initialState() {
+        drawGrid();
+        setTimeout(() => {
+            randomStart();
+            drawGrid();
+            let i = 0;
+            function step() {
+                if (i < INITIAL_GENERATIONS) {
+                    console.log(i)
+                    i++;
+                    updateCells();
+                    drawGrid()
+                    setTimeout(step, 0); 
+                }
+            }
+            step();
+        }, 0);
+    }
+
+    function randomStart() {
+        let density = Math.random();
+        for (let x = 0; x < NUM_CELLS_IN_ROW; x++) {
+            for (let y = 0; y < NUM_CELLS_IN_ROW; y++) {
+                if (Math.random() < density) liveCells.add(`${x},${y}`);
+            }
+        }
+    }
+
+    function countNeighborsForAll() {
+        // Count how many live cells neighbor each position in one pass
+        const neighborCounts = new Map(); // "x,y" -> number of live neighbors
+        for (let cell of liveCells) {
+            const [x, y] = cell.split(",").map(Number);
+            for (let xOffset = -1; xOffset <= 1; xOffset++) {
+                for (let yOffset = -1; yOffset <= 1; yOffset++) {
+                    if (xOffset === 0 && yOffset === 0) continue;
+                    const coords = `${x + xOffset},${y + yOffset}`;
+                    const count = (neighborCounts.get(coords) || 0) + 1;
+                    neighborCounts.set(coords, count);
+                }
+            }
+        }
+        return neighborCounts;
+    }
+
+
+    function updateCells() {
+        // Update the grid: survive with 2-3 neighbors, reborn with 3
+        const newCells = new Set();
+        const deadNeighbors = getDeadNeighbors();
+        const neighborCounts = countNeighborsForAll();
+
+        // Check dead cells for rebirth
+        for (let cell of deadNeighbors) {
+            const count = neighborCounts.get(cell) || 0;
+            if (DEAD_REBORN.includes(count)) {
+                newCells.add(cell);
+            }
+        }
+
+        // Check live cells for survival
+        for (let cell of liveCells) {
+            const count = neighborCounts.get(cell) || 0;
+            if (LIVE_SURVIVE.includes(count)) {
+                newCells.add(cell);
+            }
+        }
+
+        liveCells = newCells;
+    }
+
+    function updateCells2() {
+        const newCells = new Set();
+        const deadNeighbors = getDeadNeighbors();
+        for (let cell of deadNeighbors) {
+            if (DEAD_REBORN.includes(countNeighbors(cell))) newCells.add(cell);
+        }
+        for (let cell of liveCells) {
+            if (LIVE_SURVIVE.includes(countNeighbors(cell))) newCells.add(cell);
+        }
+        liveCells = newCells;
+    }
+
+    function gameLoop() {
+        drawGrid();
+        if (pausePending) {
+            stopGame();
+            pausePending = false;
+            return;
+        }
+        updateCells();
+    }
+
+    function startGame() {
+        if (!running) {
+            intervalId = setInterval(gameLoop, GENERATION_LENGTH);
+            running = true;
+        }
+    }
+
+    function stopGame() {
+        if (running) {
+            clearInterval(intervalId);
+            running = false;
+        }
+    }
+
+    function drawGridLines() {
+        ctx.strokeStyle = gridLineColor
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= canv.width; x += CELL_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canv.height);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= canv.height; y += CELL_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canv.width, y);
+            ctx.stroke();
+        }
+    }
+
+    function drawCell(x, y) {
+        ctx.fillStyle = "Black";
+        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    }
+
+    function drawGrid() {
+        // Clear the canvas
+        ctx.fillStyle = backgroundColor;
+        ctx.fillRect(0, 0, canv.width, canv.height);
+
+        // Draw the grid structure
+        drawGridLines();
+
+        // Draw all live cells
+        for (let cell of liveCells) {
+            const [x, y] = cell.split(",").map(Number);
+            drawCell(x, y);
+        }
+    }
+
+
+    // Helpers (simplified)
+    function countNeighbors(cell) {
+        let count = 0;
+        const [x, y] = cell.split(",").map(Number);
+        for (let xo = -1; xo <= 1; xo++) {
+            for (let yo = -1; yo <= 1; yo++) {
+                if (xo === 0 && yo === 0) continue;
+                if (liveCells.has(`${x + xo},${y + yo}`)) count++;
+            }
+        }
+        return count;
+    }
+
+    function getDeadNeighbors() {
+        const dead = new Set();
+        for (let cell of liveCells) {
+            const [x, y] = cell.split(",").map(Number);
+            // neighboring cells are one to the left or right (or above or below)
+            // so iterate through the potential neighbors
+            for (let xOffset = -1; xOffset <= 1; xOffset++) {
+                for (let yOffset = -1; yOffset <= 1; yOffset++) {
+                    // this is not a neighbor but the main cell
+                    if (xOffset === 0 && yOffset === 0) continue;
+                    const neighbor = `${x + xOffset},${y + yOffset}`;
+                    if (!liveCells.has(neighbor)) dead.add(neighbor);
+                }
+            }
+        }
+        return dead;
+    }
+
+    // Public API
+    return { init };
+})();
+
+window.onload = () => GameOfLife.init();
+</script>
