@@ -23,9 +23,11 @@ const GameOfLife = (function () {
     const INITIAL_GENERATIONS = 1000;
 
     // UI consants
-    const liveCellColor = "Black";
-    const gridLineColor = "DarkGray";
-    const backgroundColor = "Beige";
+    const CELL_COLOR_0 = "Black";
+    const CELL_COLOR_1 = "Red";
+    const CELL_COLOR_2 = "Blue";
+    const GRID_LINE_COLOR = "DarkGray";
+    const GRID_BACKGROUND_COLOR = "Beige";
 
 
     // Initialize the game
@@ -75,50 +77,86 @@ const GameOfLife = (function () {
         let density = Math.random();
         for (let x = 0; x < NUM_CELLS_IN_ROW; x++) {
             for (let y = 0; y < NUM_CELLS_IN_ROW; y++) {
-                if (Math.random() < density) liveCells.add(`0,${x},${y}`);
+                if (Math.random() < density) {
+                    const t = Math.floor(Math.random() * 3); // 0, 1, or 2
+                    liveCells.add(`${t},${x},${y}`);
+                }
             }
         }
     }
 
     function countNeighborsForAll() {
         // Count how many live cells neighbor each position in one pass
-        // TODO: this will need to handle different teams
-        const neighborCounts = new Map(); // "x,y" -> number of live neighbors
+        const neighborCounts = new Map(); // "x,y" -> { 0: n, 1: n, 2: n }
         for (let cell of liveCells) {
             const [t, x, y] = cell.split(",").map(Number);
             for (let xOffset = -1; xOffset <= 1; xOffset++) {
                 for (let yOffset = -1; yOffset <= 1; yOffset++) {
                     if (xOffset === 0 && yOffset === 0) continue;
-                    const coords = `${t},${x + xOffset},${y + yOffset}`;
-                    const count = (neighborCounts.get(coords) || 0) + 1;
-                    neighborCounts.set(coords, count);
+                    const coords = `${x + xOffset},${y + yOffset}`;
+                    const counts = neighborCounts.get(coords) || { 0: 0, 1: 0, 2: 0 };
+                    counts[t]++;
+                    neighborCounts.set(coords, counts);
                 }
             }
         }
         return neighborCounts;
     }
 
-
     function updateCells() {
-        // Update the grid: survive with 2-3 neighbors, reborn with 3
         const newCells = new Set();
         const deadNeighbors = getDeadNeighbors();
         const neighborCounts = countNeighborsForAll();
 
-        // Check dead cells for rebirth
+        // Rebirth: Assign team by majority, random if tied
         for (let cell of deadNeighbors) {
-            const count = neighborCounts.get(cell) || 0;
-            if (DEAD_REBORN.includes(count)) {
-                //TODO: logic to compute correct owner
-                newCells.add(cell);
+            const counts = neighborCounts.get(cell) || { 0: 0, 1: 0, 2: 0 };
+            const total = counts[0] + counts[1] + counts[2];
+            if (DEAD_REBORN.includes(total)) {
+                let maxTeam = 0, maxCount = counts[0];
+                if (counts[1] > maxCount) { maxTeam = 1; maxCount = counts[1]; }
+                if (counts[2] > maxCount) { maxTeam = 2; }
+                if (counts[0] === counts[1] || counts[1] === counts[2] || counts[0] === counts[2]) {
+                    const tiedTeams = [];
+                    if (counts[0] > 0) tiedTeams.push(0);
+                    if (counts[1] > 0) tiedTeams.push(1);
+                    if (counts[2] > 0) tiedTeams.push(2);
+                    maxTeam = tiedTeams[Math.floor(Math.random() * tiedTeams.length)];
+                }
+                newCells.add(`${maxTeam},${cell}`);
             }
         }
 
-        // Check live cells for survival
+        // Survival: Custom rules for 2 neighbors, majority for 3
         for (let cell of liveCells) {
-            const count = neighborCounts.get(cell) || 0;
-            if (LIVE_SURVIVE.includes(count)) {
-                newCells.add(cell);
+            const [t, x, y] = cell.split(",").map(Number);
+            const coords = `${x},${y}`;
+            const counts = neighborCounts.get(coords) || { 0: 0, 1: 0, 2: 0 };
+            const total = counts[0] + counts[1] + counts[2];
+            if (LIVE_SURVIVE.includes(total)) {
+                let newTeam = t; // Default: keep current
+                if (total === 2) {
+                    const neighbors = [];
+                    if (counts[0] > 0) neighbors.push(...Array(counts[0]).fill(0));
+                    if (counts[1] > 0) neighbors.push(...Array(counts[1]).fill(1));
+                    if (counts[2] > 0) neighbors.push(...Array(counts[2]).fill(2));
+
+                    if (neighbors[0] === neighbors[1] && neighbors[0] !== t) {
+                        // Both same, different from live: flip
+                        newTeam = neighbors[0];
+                    } else if (neighbors[0] !== neighbors[1] && neighbors[0] !== t && neighbors[1] !== t) {
+                        // Both different, different from live: random
+                        newTeam = neighbors[Math.floor(Math.random() * 2)];
+                    } // Else: tied (1-1) and live is one → stay t
+                } else if (total === 3) {
+                    // Majority or keep if tied (previous logic)
+                    let maxTeam = t, maxCount = counts[t];
+                    if (counts[0] > maxCount) { maxTeam = 0; maxCount = counts[0]; }
+                    if (counts[1] > maxCount && counts[1] > counts[t]) { maxTeam = 1; }
+                    if (counts[2] > maxCount && counts[2] > counts[t]) { maxTeam = 2; }
+                    newTeam = maxTeam;
+                }
+                newCells.add(`${newTeam},${x},${y}`);
             }
         }
 
@@ -150,7 +188,7 @@ const GameOfLife = (function () {
     }
 
     function drawGridLines() {
-        ctx.strokeStyle = gridLineColor
+        ctx.strokeStyle = GRID_LINE_COLOR
         ctx.lineWidth = 1;
         for (let x = 0; x <= canv.width; x += CELL_SIZE) {
             ctx.beginPath();
@@ -166,14 +204,14 @@ const GameOfLife = (function () {
         }
     }
 
-    function drawCell(x, y) {
-        ctx.fillStyle = "Black";
+    function drawCell(t, x, y) {
+        ctx.fillStyle = t === 0 ? CELL_COLOR_0 : t === 1 ? CELL_COLOR_1 : CELL_COLOR_2;
         ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
     }
 
     function drawGrid() {
         // Clear the canvas
-        ctx.fillStyle = backgroundColor;
+        ctx.fillStyle = GRID_BACKGROUND_COLOR;
         ctx.fillRect(0, 0, canv.width, canv.height);
 
         // Draw the grid structure
@@ -182,7 +220,7 @@ const GameOfLife = (function () {
         // Draw all live cells
         for (let cell of liveCells) {
             const [t, x, y] = cell.split(",").map(Number);
-            drawCell(x, y);
+            drawCell(t, x, y);
         }
     }
 
@@ -192,15 +230,14 @@ const GameOfLife = (function () {
         for (let cell of liveCells) {
             const [t, x, y] = cell.split(",").map(Number);
             // neighboring cells are one to the left or right (or above or below)
-            // so iterate through the potential neighbors
             for (let xOffset = -1; xOffset <= 1; xOffset++) {
                 for (let yOffset = -1; yOffset <= 1; yOffset++) {
                     // this is not a neighbor, but the center cell
                     if (xOffset === 0 && yOffset === 0) continue;
-                    // TODO: right now it only gets neighbors of the same type
-                    // - should we have three calls (teams 0, 1 and 2?), or some other data structure?
-                    const neighbor = `${t},${x + xOffset},${y + yOffset}`;
-                    if (!liveCells.has(neighbor)) dead.add(neighbor);
+
+                    const coords = `${x + xOffset},${y + yOffset}`;
+                    const neighborKeys = [`0,${coords}`, `1,${coords}`, `2,${coords}`];
+                    if (!neighborKeys.some(key => liveCells.has(key))) dead.add(coords);
                 }
             }
         }
