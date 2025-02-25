@@ -11,35 +11,43 @@
     </div>
 </div>
 <script>
+
 // using old-school module pattern for lightweight way to handle scope problems
 const GameOfLife = (function () {
+    // game logic constants
+    const LIVE_SURVIVE = [2, 3];
+    const DEAD_REBORN = [3];
+    const GENERATION_LENGTH = 50;
+    const INITIAL_GENERATIONS = 1000;
+
     // Private state
     let liveCells = new Set();
     let running = false;
     let pausePending = false;
     let intervalId = null;
+    let generation = 0;
 
     // DOM setup (private)
     const canv = document.getElementById("gc");
     const ctx = canv.getContext("2d");
-    const CELL_SIZE = 10
+    const CELL_SIZE = 10;
     const NUM_CELLS_IN_ROW = canv.width / CELL_SIZE;
     const LOWER_BOUND = -50;
     const UPPER_BOUND = NUM_CELLS_IN_ROW + (-1 * LOWER_BOUND);
 
-    // game logic constants
-    const LIVE_SURVIVE = [2, 3];
-    const DEAD_REBORN = [3];
-    const GENERATION_LENGTH = 50;
-    const INITIAL_GENERATIONS = 0;
+    // UI DOM refs
+    const generationSpan = document.getElementById("generation");
+    const team0Span = document.getElementById("team0");
+    const team1Span = document.getElementById("team1");
+    const team2Span = document.getElementById("team2");
 
-    // UI consants
+
+    // UI constants
     const CELL_COLOR_0 = "Black";
     const CELL_COLOR_1 = "Red";
     const CELL_COLOR_2 = "Blue";
     const GRID_LINE_COLOR = "DarkGray";
     const GRID_BACKGROUND_COLOR = "Beige";
-
 
     // Initialize the game
     function init() {
@@ -67,17 +75,15 @@ const GameOfLife = (function () {
 
     function createHomeBases() {
         const homeBasePattern = [
-            [0, 0, 0], [0, 0, 1], [0, 0, 2], [0, 0, 3], // Top row
-            [0, 1, 0], [1, 1, 1], [1, 1, 2], [0, 1, 3], // Live row 1
-            [0, 2, 0], [1, 2, 1], [1, 2, 2], [0, 2, 3], // Live row 2
-            [0, 3, 0], [0, 3, 1], [0, 3, 2], [0, 3, 3]  // Bottom row
+            [0, 0, 0], [0, 0, 1], [0, 0, 2], [0, 0, 3],
+            [0, 1, 0], [1, 1, 1], [1, 1, 2], [0, 1, 3],
+            [0, 2, 0], [1, 2, 1], [1, 2, 2], [0, 2, 3],
+            [0, 3, 0], [0, 3, 1], [0, 3, 2], [0, 3, 3]
         ];
         // Team 1 (Red) base: top-right
         placePattern(1, NUM_CELLS_IN_ROW - 3, -1, homeBasePattern); 
-
         // Team 2 (Blue) base: bottom-left
         placePattern(2, -1, NUM_CELLS_IN_ROW - 3, homeBasePattern); 
-        console.log("placed home bases")
         drawGrid();
     }
 
@@ -89,23 +95,20 @@ const GameOfLife = (function () {
             let i = 0;
             function step() {
                 if (i < INITIAL_GENERATIONS) {
-                    console.log(i)
                     i++;
                     updateCells();
-                    drawGrid()
+                    drawGrid();
                     setTimeout(step, 0); 
-                }
-                else {
+                } else {
                     createHomeBases();
                 }
             }
             step();
         }, 0);
-
     }
 
     function randomStart() {
-        let density = Math.random();
+        let density = 0.1;
         for (let x = 0; x < NUM_CELLS_IN_ROW; x++) {
             for (let y = 0; y < NUM_CELLS_IN_ROW; y++) {
                 if (Math.random() < density) {
@@ -115,9 +118,27 @@ const GameOfLife = (function () {
         }
     }
 
+    function updateStatusBar() {
+        // Count live cells by team and update UI
+        const teamCounts = { 0: 0, 1: 0, 2: 0 };
+        for (let cell of liveCells) {
+            const t = parseInt(cell.split(",")[0]);
+            teamCounts[t]++;
+        }
+        const totalLive = liveCells.size || 1; // Avoid division by 0
+        const perc0 = ((teamCounts[0] / totalLive) * 100).toFixed(1);
+        const perc1 = ((teamCounts[1] / totalLive) * 100).toFixed(1);
+        const perc2 = ((teamCounts[2] / totalLive) * 100).toFixed(1);
+
+        generationSpan.textContent = `Generation: ${generation}`;
+        team0Span.textContent = `Neutral: ${perc0}%`;
+        team1Span.textContent = `Red: ${perc1}%`;
+        team2Span.textContent = `Blue: ${perc2}%`;
+    }
+
     function countNeighborsForAll() {
         // Count how many live cells neighbor each position in one pass
-        const neighborCounts = new Map(); // "x,y" -> { 0: n, 1: n, 2: n }
+        const neighborCounts = new Map(); 
         for (let cell of liveCells) {
             const [t, x, y] = cell.split(",").map(Number);
             for (let xOffset = -1; xOffset <= 1; xOffset++) {
@@ -164,13 +185,12 @@ const GameOfLife = (function () {
             const counts = neighborCounts.get(coords) || { 0: 0, 1: 0, 2: 0 };
             const total = counts[0] + counts[1] + counts[2];
             if (LIVE_SURVIVE.includes(total)) {
-                let newTeam = t; // Default: keep current
+                let newTeam = t; 
                 if (total === 2) {
                     const neighbors = [];
                     if (counts[0] > 0) neighbors.push(...Array(counts[0]).fill(0));
                     if (counts[1] > 0) neighbors.push(...Array(counts[1]).fill(1));
                     if (counts[2] > 0) neighbors.push(...Array(counts[2]).fill(2));
-
                     if (neighbors[0] === neighbors[1] && neighbors[0] !== t) {
                         // Both same, different from live: flip
                         newTeam = neighbors[0];
@@ -217,7 +237,9 @@ const GameOfLife = (function () {
             pausePending = false;
             return;
         }
+        generation++;
         updateCells();
+        updateStatusBar();
     }
 
     function startGame() {
@@ -235,7 +257,7 @@ const GameOfLife = (function () {
     }
 
     function drawGridLines() {
-        ctx.strokeStyle = GRID_LINE_COLOR
+        ctx.strokeStyle = GRID_LINE_COLOR;
         ctx.lineWidth = 1;
         for (let x = 0; x <= canv.width; x += CELL_SIZE) {
             ctx.beginPath();
@@ -269,6 +291,7 @@ const GameOfLife = (function () {
             const [t, x, y] = cell.split(",").map(Number);
             drawCell(t, x, y);
         }
+        updateStatusBar(); // Update UI on draw
     }
 
 
