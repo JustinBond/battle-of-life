@@ -27,8 +27,7 @@ const GameOfLife = (function () {
     const GENERATIONS_BETWEEN_TURNS = 50;
     const BASE_BUFFER = 30;
     const MAX_PICKS = 1; // One pattern per turn
-    // not technically number of statics, but close enough
-    const NUM_STATICS_AT_START = 30;
+    const NUM_STATICS_AT_START = 50;
 
     // Private state
     let liveCells = new Set();
@@ -92,6 +91,28 @@ const GameOfLife = (function () {
         initialState();
     }
 
+    // Pretty print live cells as a grid
+    function prettyPrint(xMin = 0, xMax = 7, yMin = 74, yMax = 79) {
+        console.log(`Grid (${xMin},${yMin}) to (${xMax},${yMax}):`);
+        let grid = [];
+        for (let y = yMin; y <= yMax; y++) {
+            let row = [];
+            for (let x = xMin; x <= xMax; x++) {
+                let found = false;
+                for (let t = 0; t <= 2; t++) {
+                    if (liveCells.has(`${t},${x},${y}`)) {
+                        row.push(t);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) row.push(".");
+            }
+            grid.push(row);
+        }
+        grid.forEach((row, i) => console.log(`y=${yMin + i}: ${row.join(" ")}`));
+    }
+
     // Event handlers
     function handleClick(event) {
         if (running || turnPhase === "running" || event.target !== canv) return;
@@ -116,8 +137,8 @@ const GameOfLife = (function () {
 
     function handleKeyPress(event) {
         if (event.code === "Space" && turnPhase === "running") {
-                running ? pausePending = true : startGame();
-            } else if (previewCells.size > 0) {
+            running ? pausePending = true : startGame();
+        } else if (previewCells.size > 0) {
             const team = turnPhase === "team2" ? 2 : 1;
             const legalCells = turnPhase === "team2" ? team2LegalCells : team1LegalCells;
             if (event.code === "Enter") {
@@ -128,9 +149,10 @@ const GameOfLife = (function () {
                 turnPhase = turnPhase === "team2" ? "team1" : "running";
                 if (turnPhase === "running") {
                     startGame();
-            }
-            updateTurnUI();
-            drawGrid();
+                }
+                updateTurnUI();
+                drawGrid();
+                prettyPrint();
             } else if (event.code === "ArrowLeft") {
                 // Rotate counterclockwise
                 rotation = (rotation - 1 + 4) % 4;
@@ -172,10 +194,10 @@ const GameOfLife = (function () {
     }
 
     function selectPattern(event, pattern) {
-        event.stopPropagation(); // Stop bubbling to handleClick
+        event.stopPropagation(); // Stop event bubbling to handleClick
         if (turnPhase !== "running" && previewCells.size === 0) {
             selectedPattern = pattern;
-            updateLegalCells(); // Update buffer after picking pattern
+            updateLegalCells();
             updateTurnUI();
             drawGrid();
         }
@@ -186,6 +208,7 @@ const GameOfLife = (function () {
         placePattern(1, NUM_CELLS_IN_ROW - 2, 0, block);
         // Team 2 (Blue) base: bottom-left
         placePattern(2, 0, NUM_CELLS_IN_ROW - 2, block);
+        updateLegalCells();
         drawGrid();
     }
 
@@ -195,23 +218,28 @@ const GameOfLife = (function () {
         setTimeout(() => {
             randomSeed();
             createHomeBases();
+            updateLegalCells();
             updateTurnUI();
             drawGrid();
+            prettyPrint();
         }, 0);
     }
 
     function randomSeed() {
         // Seed with random static patterns (Team 0)
         const patterns = [block];
-        const numPatterns = Math.floor(Math.random() * NUM_STATICS_AT_START) + 5; 
-        for (let i = 0; i < numPatterns; i++) {
+        let numPatterns = Math.floor(Math.random() * (0.75 * NUM_STATICS_AT_START) + 0.25 * NUM_STATICS_AT_START);
+        while (numPatterns > 0) {
             const pattern = patterns[Math.floor(Math.random() * patterns.length)];
             const xBase = Math.floor(Math.random() * (NUM_CELLS_IN_ROW - 3));
             const yBase = Math.floor(Math.random() * (NUM_CELLS_IN_ROW - 3));
             // Avoid base zones
             if ((xBase >= NUM_CELLS_IN_ROW - 3 - BASE_BUFFER && yBase <= 3 + BASE_BUFFER) || 
-                (xBase <= 3 + BASE_BUFFER && yBase >= NUM_CELLS_IN_ROW - 3 - BASE_BUFFER)) continue;
+                (xBase <= 3 + BASE_BUFFER && yBase >= NUM_CELLS_IN_ROW - 3 - BASE_BUFFER)) {
+                    continue;
+                }
             placePattern(0, xBase, yBase, pattern);
+            numPatterns--;
         }
     }
 
@@ -255,9 +283,7 @@ const GameOfLife = (function () {
                 if (pattern[i][j] === 1) {
                     liveCells.add(`${team},${x},${y}`);
                 } else {
-                for (let t = 0; t <= 2; t++) {
-                    liveCells.delete(`${t},${x},${y}`);
-                }
+                    liveCells.delete(`${team},${x},${y}`);
                 }
             }
         }
@@ -303,71 +329,81 @@ const GameOfLife = (function () {
     }
 
     function updateLegalCells() {
-        // Flood-fill from team-owned cells with exact pattern size
         team1LegalCells.clear();
         team2LegalCells.clear();
 
-        const team1Base = new Set([
-            `1,${NUM_CELLS_IN_ROW - 2},0`, `1,${NUM_CELLS_IN_ROW - 2},1`,
-            `1,${NUM_CELLS_IN_ROW - 1},0`, `1,${NUM_CELLS_IN_ROW - 1},1`
-        ]);
-        const team2Base = new Set([
-            `2,0,${NUM_CELLS_IN_ROW - 2}`, `2,0,${NUM_CELLS_IN_ROW - 1}`,
-            `2,1,${NUM_CELLS_IN_ROW - 2}`, `2,1,${NUM_CELLS_IN_ROW - 1}`
-        ]);
-
-        function floodFill(team, baseCells, legalCells) {
-            const queue = [...baseCells];
+        function chainLegalCells(team, legalCells) {
             const visited = new Set();
-            // adding 1 to height and width because we need the 1 cell buffer
-            const height = selectedPattern ? selectedPattern.length + 1: 2; // Rows
-            const width = selectedPattern ? selectedPattern[0].length + 1: 2; // Cols
+            const queue = []; // { x, y, neutralCount }
+            const buffer = 2; // 2-cell orthogonal buffer
+            const patternHeight = selectedPattern ? selectedPattern.length : 2;
+            const patternWidth = selectedPattern ? selectedPattern[0].length : 2;
+            const reach = Math.max(patternHeight, patternWidth) + buffer; // Pattern size + buffer
+
+            // Start with home base cells
+            const homeBaseCells = team === 1
+                ? [`1,${NUM_CELLS_IN_ROW - 2},0`, `1,${NUM_CELLS_IN_ROW - 1},0`,
+                `1,${NUM_CELLS_IN_ROW - 2},1`, `1,${NUM_CELLS_IN_ROW - 1},1`] // Red base
+                : [`2,0,${NUM_CELLS_IN_ROW - 2}`, `2,1,${NUM_CELLS_IN_ROW - 2}`,
+                `2,0,${NUM_CELLS_IN_ROW - 1}`, `2,1,${NUM_CELLS_IN_ROW - 1}`]; // Blue base
+
+            for (let cell of homeBaseCells) {
+                const [t, x, y] = cell.split(",").map(Number);
+                if (liveCells.has(cell)) {
+                    queue.push({ x, y, neutralCount: 0 });
+                    visited.add(`${x},${y}`);
+                    expandLegalArea(x, y, reach, legalCells);
+                }
+            }
+
+            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]]; // Orthogonal only
 
             while (queue.length > 0) {
-                const cell = queue.shift();
-                const [t, x, y] = cell.split(",").map(Number);
-                const coord = `${x},${y}`;
-                if (visited.has(coord)) continue;
-                visited.add(coord);
+                const { x, y, neutralCount } = queue.shift();
 
-                // Add to legal cells if owned by team or base
-                if (liveCells.has(cell) || baseCells.has(cell)) {
-                    // Expand to exact pattern size around owned cell
-                    for (let dx = -width; dx <= width; dx++) {
-                        for (let dy = -height; dy <= height; dy++) {
-                            const nx = x + dx;
-                            const ny = y + dy;
-                            if (nx >= 0 && nx < NUM_CELLS_IN_ROW && ny >= 0 && ny < NUM_CELLS_IN_ROW) {
-                                legalCells.add(`${nx},${ny}`);
-                            }
-                        }
-                    }
-                }
-
-                // Check 4 directions with 1-cell gap
-                const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
                 for (let [dx, dy] of dirs) {
-                    for (let gap = 0; gap <= 1; gap++) {
-                        const nx = x + dx * (gap + 1);
-                        const ny = y + dy * (gap + 1);
-                        const nextCoord = `${nx},${ny}`;
-                        const nextCell = `${t},${nx},${ny}`;
-                        if (nx >= 0 && nx < NUM_CELLS_IN_ROW && ny >= 0 && ny < NUM_CELLS_IN_ROW && !visited.has(nextCoord)) {
-                            if (gap === 0 || liveCells.has(`${t},${x + dx},${y + dy}`)) {
-                                // Only queue if next cell is team-owned or base
-                                if (liveCells.has(nextCell) || baseCells.has(nextCell)) {
-                                    queue.push(nextCell);
-                                    visited.add(nextCoord);
-                                }
-                            }
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    const nextCoord = `${nx},${ny}`;
+                    if (nx < 0 || nx >= NUM_CELLS_IN_ROW || ny < 0 || ny >= NUM_CELLS_IN_ROW || visited.has(nextCoord)) {
+                        continue;
+                    }
+
+                    const isTeamCell = liveCells.has(`${team},${nx},${ny}`);
+                    const newNeutralCount = isTeamCell ? 0 : neutralCount + 1;
+
+                    if (newNeutralCount <= buffer) {
+                        visited.add(nextCoord);
+                        queue.push({ x: nx, y: ny, neutralCount: newNeutralCount });
+                        if (isTeamCell) {
+                            expandLegalArea(nx, ny, reach, legalCells);
+                        } else {
+                            legalCells.add(nextCoord);
                         }
                     }
                 }
             }
         }
 
-        floodFill(1, team1Base, team1LegalCells);
-        floodFill(2, team2Base, team2LegalCells);
+        function expandLegalArea(x, y, reach, legalCells) {
+            // Expand in a square to include 1-step diagonals, but chain stays orthogonal
+            for (let dx = -reach; dx <= reach; dx++) {
+                for (let dy = -reach; dy <= reach; dy++) {
+                    const ex = x + dx;
+                    const ey = y + dy;
+                    if (ex >= 0 && ex < NUM_CELLS_IN_ROW && ey >= 0 && ey < NUM_CELLS_IN_ROW) {
+                        // Only add if within 1 diagonal step or orthogonal
+                        const manhattanDist = Math.abs(dx) + Math.abs(dy);
+                        if (manhattanDist <= reach + 1) { // Allow 1-step diagonals
+                            legalCells.add(`${ex},${ey}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        chainLegalCells(1, team1LegalCells); // Red
+        chainLegalCells(2, team2LegalCells); // Blue
     }
 
     function isLegalPlacement(team, xBase, yBase, pattern, legalCells) {
@@ -427,6 +463,8 @@ const GameOfLife = (function () {
         const newCells = new Set();
         const deadNeighbors = getDeadNeighbors();
         const neighborCounts = countNeighborsForAll();
+
+        //prettyPrint();
 
         // Rebirth: Assign team by majority, random if tied
         for (let cell of deadNeighbors) {
@@ -495,7 +533,7 @@ const GameOfLife = (function () {
             }
             updateStatusBar();
         } else {
-            drawGrid(); // Just draw during turns, no update
+            drawGrid();
         }
         if (pausePending) {
             stopGame();
