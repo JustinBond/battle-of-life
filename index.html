@@ -472,24 +472,18 @@ const GameOfLife = (function () {
         return baseCells.every(cell => !liveCells.has(cell));
     }
 
-    // Check for a winner after each update
     function checkWinCondition() {
         const redBaseGone = isHomeBaseDestroyed(1);
         const blueBaseGone = isHomeBaseDestroyed(2);
 
         if (redBaseGone && blueBaseGone) {
-            winner = "Draw"; // Rare edge case
+            return "It's a Draw.";
         } else if (redBaseGone) {
-            winner = "Blue";
+            return "Blue Wins!";
         } else if (blueBaseGone) {
-            winner = "Red";
+            return "Red Wins!";
         }
-
-        if (winner) {
-            stopGame();
-            updateStatusBar(); // Show final state
-            alert(`${winner} wins!`); // Simple UI feedback
-        }
+        return null
     }
 
     function updateCells() {
@@ -551,16 +545,25 @@ const GameOfLife = (function () {
         }
 
         liveCells = newCells;
-        checkWinCondition();
         updateStatusBar();
     }
 
     function gameLoop() {
         if (turnPhase === "running" && !winner) {
             generation++;
-            updateCells();
-            drawGrid();
-            if (generation % GENERATIONS_BETWEEN_TURNS === 0) {
+            updateCells();         // Update cell state
+            drawGrid();            // Draw the updated state
+
+            winner = checkWinCondition();
+            if (winner !== null) {
+                stopGame();        // Stop immediately
+                drawGrid();        // Redraw to ensure final state
+                // Use a slightly longer delay to force render
+                setTimeout(() => {
+                    updateStatusBar(); // Update UI with winner
+                    alert(winner);
+                }, 100);           // 100ms ensures repaint
+            } else if (generation % GENERATIONS_BETWEEN_TURNS === 0) {
                 stopGame();
                 turnPhase = "team2";
                 updateTurnUI();
