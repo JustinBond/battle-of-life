@@ -44,6 +44,7 @@ const GameOfLife = (function () {
     let flipped = false; // Horizontal flip toggle
     let team1LegalCells = new Set(); // Red's chain
     let team2LegalCells = new Set(); // Blue's chain
+    let winner = null;
 
     // DOM setup (private)
     const canv = document.getElementById("gc");
@@ -244,13 +245,12 @@ const GameOfLife = (function () {
     }
 
     function updateStatusBar() {
-        // Count live cells by team and update UI
         const teamCounts = { 0: 0, 1: 0, 2: 0 };
         for (let cell of liveCells) {
             const t = parseInt(cell.split(",")[0]);
             teamCounts[t]++;
         }
-        const totalLive = liveCells.size || 1; 
+        const totalLive = liveCells.size || 1;
         const perc0 = ((teamCounts[0] / totalLive) * 100).toFixed(1);
         const perc1 = ((teamCounts[1] / totalLive) * 100).toFixed(1);
         const perc2 = ((teamCounts[2] / totalLive) * 100).toFixed(1);
@@ -259,6 +259,9 @@ const GameOfLife = (function () {
         team0Span.textContent = `Neutral: ${perc0}%`;
         team1Span.textContent = `Red: ${perc1}%`;
         team2Span.textContent = `Blue: ${perc2}%`;
+        if (winner) {
+            generationSpan.textContent += ` | ${winner} wins!`;
+        }
     }
 
     function updateTurnUI() {
@@ -459,6 +462,36 @@ const GameOfLife = (function () {
         return neighborCounts;
     }
 
+    // Check if a team's home base is fully destroyed
+    function isHomeBaseDestroyed(team) {
+        const baseCells = team === 1 
+            ? [`1,${NUM_CELLS_IN_ROW - 2},0`, `1,${NUM_CELLS_IN_ROW - 1},0`, 
+               `1,${NUM_CELLS_IN_ROW - 2},1`, `1,${NUM_CELLS_IN_ROW - 1},1`] // Red
+            : [`2,0,${NUM_CELLS_IN_ROW - 2}`, `2,1,${NUM_CELLS_IN_ROW - 2}`, 
+               `2,0,${NUM_CELLS_IN_ROW - 1}`, `2,1,${NUM_CELLS_IN_ROW - 1}`]; // Blue
+        return baseCells.every(cell => !liveCells.has(cell));
+    }
+
+    // Check for a winner after each update
+    function checkWinCondition() {
+        const redBaseGone = isHomeBaseDestroyed(1);
+        const blueBaseGone = isHomeBaseDestroyed(2);
+
+        if (redBaseGone && blueBaseGone) {
+            winner = "Draw"; // Rare edge case
+        } else if (redBaseGone) {
+            winner = "Blue";
+        } else if (blueBaseGone) {
+            winner = "Red";
+        }
+
+        if (winner) {
+            stopGame();
+            updateStatusBar(); // Show final state
+            alert(`${winner} wins!`); // Simple UI feedback
+        }
+    }
+
     function updateCells() {
         const newCells = new Set();
         const deadNeighbors = getDeadNeighbors();
@@ -518,11 +551,12 @@ const GameOfLife = (function () {
         }
 
         liveCells = newCells;
+        checkWinCondition();
         updateStatusBar();
     }
 
     function gameLoop() {
-        if (turnPhase === "running") {
+        if (turnPhase === "running" && !winner) {
             generation++;
             updateCells();
             drawGrid();
