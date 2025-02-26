@@ -17,7 +17,6 @@
     </div>
 </div>
 <script>
-
 // using old-school module pattern for lightweight way to handle scope problems
 const GameOfLife = (function () {
     // game logic constants
@@ -116,8 +115,8 @@ const GameOfLife = (function () {
 
     function handleKeyPress(event) {
         if (event.code === "Space" && turnPhase === "running") {
-                running ? pausePending = true : startGame();
-            } else if (previewCells.size > 0) {
+            running ? pausePending = true : startGame();
+        } else if (previewCells.size > 0) {
             const team = turnPhase === "team2" ? 2 : 1;
             const legalCells = turnPhase === "team2" ? team2LegalCells : team1LegalCells;
             if (event.code === "Enter") {
@@ -128,9 +127,9 @@ const GameOfLife = (function () {
                 turnPhase = turnPhase === "team2" ? "team1" : "running";
                 if (turnPhase === "running") {
                     startGame();
-            }
-            updateTurnUI();
-            drawGrid();
+                }
+                updateTurnUI();
+                drawGrid();
             } else if (event.code === "ArrowLeft") {
                 // Rotate counterclockwise
                 rotation = (rotation - 1 + 4) % 4;
@@ -203,7 +202,7 @@ const GameOfLife = (function () {
     function randomSeed() {
         // Seed with random static patterns (Team 0)
         const patterns = [block];
-        const numPatterns = Math.floor(Math.random() * NUM_STATICS_AT_START) + 5; 
+        const numPatterns = Math.floor(Math.random() * NUM_STATICS_AT_START) + 5;
         for (let i = 0; i < numPatterns; i++) {
             const pattern = patterns[Math.floor(Math.random() * patterns.length)];
             const xBase = Math.floor(Math.random() * (NUM_CELLS_IN_ROW - 3));
@@ -222,7 +221,7 @@ const GameOfLife = (function () {
             const t = parseInt(cell.split(",")[0]);
             teamCounts[t]++;
         }
-        const totalLive = liveCells.size || 1; 
+        const totalLive = liveCells.size || 1;
         const perc0 = ((teamCounts[0] / totalLive) * 100).toFixed(1);
         const perc1 = ((teamCounts[1] / totalLive) * 100).toFixed(1);
         const perc2 = ((teamCounts[2] / totalLive) * 100).toFixed(1);
@@ -255,9 +254,9 @@ const GameOfLife = (function () {
                 if (pattern[i][j] === 1) {
                     liveCells.add(`${team},${x},${y}`);
                 } else {
-                for (let t = 0; t <= 2; t++) {
-                    liveCells.delete(`${t},${x},${y}`);
-                }
+                    for (let t = 0; t <= 2; t++) {
+                        liveCells.delete(`${t},${x},${y}`);
+                    }
                 }
             }
         }
@@ -279,12 +278,12 @@ const GameOfLife = (function () {
                 newGrid.push(row);
             }
             grid = newGrid;
-                }
+        }
         
         // Flip vertically if toggled
-                if (flip) {
+        if (flip) {
             grid = grid.map(row => [...row].reverse());
-                }
+        }
 
         // Place rotated/flipped pattern
         for (let i = 0; i < grid.length; i++) {
@@ -292,7 +291,7 @@ const GameOfLife = (function () {
                 const x = xBase + j;
                 const y = yBase + i;
                 if (grid[i][j] === 1) {
-                previewCells.add(`${team},${x},${y}`);
+                    previewCells.add(`${team},${x},${y}`);
                 }
             }
         }
@@ -319,9 +318,10 @@ const GameOfLife = (function () {
         function floodFill(team, baseCells, legalCells) {
             const queue = [...baseCells];
             const visited = new Set();
-            // adding 1 to height and width because we need the 1 cell buffer
-            const height = selectedPattern ? selectedPattern.length + 1: 2; // Rows
-            const width = selectedPattern ? selectedPattern[0].length + 1: 2; // Cols
+            const height = selectedPattern ? selectedPattern.length : 2; // Rows
+            const width = selectedPattern ? selectedPattern[0].length : 2; // Cols
+            const halfHeight = Math.floor(height / 2);
+            const halfWidth = Math.floor(width / 2);
 
             while (queue.length > 0) {
                 const cell = queue.shift();
@@ -333,8 +333,8 @@ const GameOfLife = (function () {
                 // Add to legal cells if owned by team or base
                 if (liveCells.has(cell) || baseCells.has(cell)) {
                     // Expand to exact pattern size around owned cell
-                    for (let dx = -width; dx <= width; dx++) {
-                        for (let dy = -height; dy <= height; dy++) {
+                    for (let dx = -halfWidth; dx < width - halfWidth; dx++) {
+                        for (let dy = -halfHeight; dy < height - halfHeight; dy++) {
                             const nx = x + dx;
                             const ny = y + dy;
                             if (nx >= 0 && nx < NUM_CELLS_IN_ROW && ny >= 0 && ny < NUM_CELLS_IN_ROW) {
@@ -388,9 +388,9 @@ const GameOfLife = (function () {
         }
         
         // Flip vertically if toggled
-                if (flipped) {
+        if (flipped) {
             grid = grid.map(row => [...row].reverse());
-                }
+        }
 
         // Check legal placement
         for (let i = 0; i < grid.length; i++) {
@@ -398,7 +398,7 @@ const GameOfLife = (function () {
                 if (grid[i][j] === 1) {
                     const x = xBase + j;
                     const y = yBase + i;
-                if (legalCells.has(`${x},${y}`)) return true;
+                    if (legalCells.has(`${x},${y}`)) return true;
                 }
             }
         }
@@ -407,7 +407,7 @@ const GameOfLife = (function () {
 
     function countNeighborsForAll() {
         // Count how many live cells neighbor each position in one pass
-        const neighborCounts = new Map(); 
+        const neighborCounts = new Map();
         for (let cell of liveCells) {
             const [t, x, y] = cell.split(",").map(Number);
             for (let xOffset = -1; xOffset <= 1; xOffset++) {
@@ -454,21 +454,18 @@ const GameOfLife = (function () {
             const counts = neighborCounts.get(coords) || { 0: 0, 1: 0, 2: 0 };
             const total = counts[0] + counts[1] + counts[2];
             if (LIVE_SURVIVE.includes(total)) {
-                let newTeam = t; 
+                let newTeam = t;
                 if (total === 2) {
                     const neighbors = [];
                     if (counts[0] > 0) neighbors.push(...Array(counts[0]).fill(0));
                     if (counts[1] > 0) neighbors.push(...Array(counts[1]).fill(1));
                     if (counts[2] > 0) neighbors.push(...Array(counts[2]).fill(2));
                     if (neighbors[0] === neighbors[1] && neighbors[0] !== t) {
-                        // Both same, different from live: flip
                         newTeam = neighbors[0];
                     } else if (neighbors[0] !== neighbors[1] && neighbors[0] !== t && neighbors[1] !== t) {
-                        // Both different, different from live: random
                         newTeam = neighbors[Math.floor(Math.random() * 2)];
-                    } // Else: tied (1-1) and live is one → stay t
+                    }
                 } else if (total === 3) {
-                    // Majority or keep if tied (previous logic)
                     let maxTeam = t, maxCount = counts[t];
                     if (counts[0] > maxCount) { maxTeam = 0; maxCount = counts[0]; }
                     if (counts[1] > maxCount && counts[1] > counts[t]) { maxTeam = 1; }
@@ -570,7 +567,7 @@ const GameOfLife = (function () {
             const [t, x, y] = cell.split(",").map(Number);
             drawCell(t, x, y);
         }
-        updateStatusBar(); 
+        updateStatusBar();
     }
 
     function getDeadNeighbors() {
